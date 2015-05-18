@@ -1,0 +1,745 @@
+
+<script src=three.js></script>
+<head>
+  <!-- // <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/js/bootstrap.min.js"></script> -->
+   
+</head>
+<body bgcolor=white style="overflow-y: hidden;" >
+
+<div class="container-fluid" style="text-align: left;">
+    
+  
+  <div class="row" style="margin-bottom: 20px; ">
+    <div class="col-md-8 text-center">
+
+        <div id='globalScene'></div>
+      
+    </div>
+    <div class="col-md-4 text-left">
+      <div class="row" style="margin-bottom: 20px; ">
+        <h3>move character using arrow keys </h3>
+        <h3>&#8592; &#8593; &#8595; &#8594;</h3>
+
+       
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script type="text/javascript">
+  
+  window.time = 0;
+   var mouseX = 0, mouseY = 0;
+   var isUserInteracting = false,
+               onMouseDownMouseX = 0, onMouseDownMouseY = 0,
+            lon = 0, onMouseDownLon = 0,
+            lat = 0, onMouseDownLat = 0,
+            phi = 0, theta = 0;
+  var SimpleScene = function(){
+    /* control variable */
+    this.controls = {
+                left:  false,
+                up:    false,
+                right: false,
+                down:  false,
+                jump:  false
+              };
+  };
+
+  SimpleScene.prototype = {
+    init : function(name) {
+
+      this.scene = new THREE.Scene();
+
+      // CREATE THE CAMERA, AND ATTACH IT TO THE SCENE.
+
+
+      var camera = new THREE.PerspectiveCamera(45, 1, 1, 10000);
+      camera.position.z = 5;
+      this.camera = camera;
+      this.scene.add(camera);
+
+
+
+      // CREATE THE WEBGL RENDERER, AND ATTACH IT TO THE DOCUMENT BODY.
+
+      var renderer = new THREE.WebGLRenderer( { alpha: true } );
+      renderer.setSize(700, 700);
+      renderer.shadowMapEnabled = true;
+      renderer.shadowMapType = THREE.PCFSoftShadowMap;
+      renderer.shadowMapSoft = true;
+
+      var container = document.getElementById(name);
+      container.appendChild(renderer.domElement);
+
+      
+
+      // LIGHTS
+      this.light = new THREE.PointLight(0x0000ff); // red light
+      this.light.position.set(-.256, .256, 1.256);
+      this.scene.add(this.light);
+      this.scene.add(new THREE.AmbientLight(0x222222));
+
+      var light;
+
+      light = new THREE.DirectionalLight(0xdfebff, 1.75);
+      light.position.set(300, 500, 50.5);
+      light.position.multiplyScalar(1.3);
+
+      light.castShadow = true;
+      light.shadowCameraVisible = false;
+
+      light.shadowMapWidth = 512;
+      light.shadowMapHeight = 512;
+
+      var d = 2.00;
+
+      light.shadowCameraLeft = -d;
+      light.shadowCameraRight = d;
+      light.shadowCameraTop = d;
+      light.shadowCameraBottom = -d;
+
+      light.shadowCameraFar = 1000;
+      light.shadowDarkness = 0.9;
+
+      this.scene.add(light);
+
+      this.light = light;
+
+      // CALL THE USER'S SETUP FUNCTION JUST ONCE.
+
+      this.setup(container);
+
+      // Call setup for control events 
+      this.setupControls();
+      // START THE ANIMATION LOOP.
+       var that = this;
+  var time = Date.now() * 0.00005;
+camera.target = new THREE.Vector3( 0, 0, 0 );
+                camera.position.x += ( mouseX - camera.position.x ) * 0.05;
+                camera.position.y += ( - mouseY - camera.position.y ) * 0.05;
+
+                camera.lookAt( that.scene.position );
+
+                
+
+                camera.lookAt( that.scene.position );
+                // //
+                if ( isUserInteracting === false ) {
+
+                    lon += 0.1;
+
+                }
+     
+      (function tick() {
+          time = (new Date().getTime()) / 1000;
+          that.update(); //call update of the object in the scene
+
+          renderer.render(that.scene, camera);
+          requestAnimationFrame(tick);
+
+      })();
+
+document.addEventListener( 'dragover', function ( event ) {
+
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'copy';
+
+                }, false );
+
+                document.addEventListener( 'dragenter', function ( event ) {
+
+                    document.body.style.opacity = 0.5;
+
+                }, false );
+
+                document.addEventListener( 'dragleave', function ( event ) {
+
+                    document.body.style.opacity = 1;
+
+                }, false );
+
+        document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+                document.addEventListener( 'touchstart', onDocumentTouchStart, false );
+                document.addEventListener( 'touchmove', onDocumentTouchMove, false );
+
+                //
+                document.addEventListener( 'mousedown', onDocumentMouseDown, false );
+                document.addEventListener( 'mouseup', onDocumentMouseUp, false );
+                 document.addEventListener( 'drop', function ( event ) {
+
+                    event.preventDefault();
+
+                    var reader = new FileReader();
+                    reader.addEventListener( 'load', function ( event ) {
+
+                        material.map.image.src = event.target.result;
+                        material.map.needsUpdate = true;
+
+                    }, false );
+                    reader.readAsDataURL( event.dataTransfer.files[ 0 ] );
+
+                    document.body.style.opacity = 1;
+
+                }, false );
+    },
+
+    setupControls : function(){
+
+           
+      var controls = this.controls;
+      /* keydown control */
+      document.addEventListener('keydown',
+        function(event){
+          /* handle key press events here */
+          event       = event || window.event;
+          var keycode = event.keyCode;
+
+          switch(keycode){
+            case 38:  controls.up = true;
+                      break;
+            case 37:  controls.left  = true;
+                      break;
+            case 39:  controls.right = true;
+                      break;
+            case 40:  controls.down  = true;
+                      break;
+            case 32:  controls.jump  = true;
+                      break;
+            //default:  event.preventDefault();                      
+          }
+
+        }
+        , false);
+
+      /* keyup control */
+      document.addEventListener('keyup',
+        function(event){
+          /* handle key press events here */
+          event       = event || window.event;
+          var keycode = event.keyCode;
+
+          switch(keycode){
+            case 38:  controls.up    = false;
+                      break;
+            case 37:  controls.left  = false;
+                      break;
+            case 39:  controls.right = false;
+                      break;
+            case 40:  controls.down  = false;
+                      break;
+            case 32:  controls.jump  = false;
+                      break;
+            //default:  event.preventDefault();                      
+          }
+
+        }
+        , false);
+          
+
+    }
+  };
+
+function onDocumentMouseDown( event ) {
+console.log("mouse down");
+                event.preventDefault();
+
+                isUserInteracting = true;
+
+                onPointerDownPointerX = event.clientX;
+                onPointerDownPointerY = event.clientY;
+
+                onPointerDownLon = lon;
+                onPointerDownLat = lat;
+
+            }
+
+            function onDocumentMouseMove( event ) {
+              console.log("mouse move");
+
+                // mouseX = event.clientX - windowHalfX;
+                // mouseY = event.clientY - windowHalfY;
+
+                                if ( isUserInteracting === true ) {
+
+                    lon = ( onPointerDownPointerX - event.clientX ) * 0.1 + onPointerDownLon;
+                    lat = ( event.clientY - onPointerDownPointerY ) * 0.1 + onPointerDownLat;
+
+
+                }
+
+            }
+
+        function onDocumentMouseUp( event ) {
+
+                isUserInteracting = false;
+
+            }
+
+            function onDocumentMouseWheel( event ) {
+
+                // WebKit
+
+                if ( event.wheelDeltaY ) {
+
+                    camera.fov -= event.wheelDeltaY * 0.05;
+
+                // Opera / Explorer 9
+
+                } else if ( event.wheelDelta ) {
+
+                    camera.fov -= event.wheelDelta * 0.05;
+
+                // Firefox
+
+                } else if ( event.detail ) {
+
+                    camera.fov += event.detail * 1.0;
+
+                }
+
+                camera.updateProjectionMatrix();
+
+            }
+            function onDocumentTouchStart( event ) {
+
+                if ( event.touches.length === 1 ) {
+
+                    event.preventDefault();
+
+                    mouseX = event.touches[ 0 ].pageX - windowHalfX;
+                    mouseY = event.touches[ 0 ].pageY - windowHalfY;
+
+                }
+
+            }
+
+
+            function onDocumentTouchMove( event ) {
+
+                if ( event.touches.length === 1 ) {
+
+                    event.preventDefault();
+
+                    mouseX = event.touches[ 0 ].pageX - windowHalfX;
+                    mouseY = event.touches[ 0 ].pageY - windowHalfY;
+
+                }
+
+            }
+
+            
+  function worldScene() { // contains the global world environment
+    var box, mesh, ground, character, time=0.0, skybox;
+
+    this.setup = function() {
+
+      var material = new THREE.MeshPhongMaterial();
+      
+
+      var planeGeometry = new THREE.PlaneGeometry(15.0, 15.5, 40, 70);
+
+      // materials
+      var materials = []; 
+      materials.push( new THREE.MeshPhongMaterial( { color: 0x000000, polygonOffset: true, polygonOffsetFactor: 1.0, polygonOffsetUnits: 4.0 }) );
+      materials.push( new THREE.MeshPhongMaterial( { color: 0xffffff, polygonOffset: true, polygonOffsetFactor: 1.0, polygonOffsetUnits: 4.0 }) );
+      materials.push( new THREE.MeshPhongMaterial( { color: 0xf0000f, polygonOffset: true, polygonOffsetFactor: 1.0, polygonOffsetUnits: 4.0 }) );
+
+      // assign a material to each face
+      var l = planeGeometry.faces.length / 2;
+      for( var i = 0; i < l; i ++ ) {
+          var j = 2 * i;
+          planeGeometry.faces[ j ].materialIndex = i % 3;
+          planeGeometry.faces[ j + 1 ].materialIndex = i % 3;
+      }
+
+      var plane = new THREE.Mesh(planeGeometry, new THREE.MeshFaceMaterial( materials ));
+
+      plane.position.x = 0.1;
+      plane.rotation.x = -Math.PI / 3;
+      plane.receiveShadow = true;
+
+      // Add walls around the floor
+      
+      var walls = [
+        new THREE.PlaneBufferGeometry(planeGeometry.height, 12),
+        new THREE.PlaneBufferGeometry(planeGeometry.width, 0.2)
+      ];
+      
+      mesh = new THREE.Object3D();
+      mesh.add(plane);
+
+      /* Left Wall */
+      material = new THREE.MeshPhongMaterial({color: 0x000000, polygonOffset: true, polygonOffsetFactor: 1.0, polygonOffsetUnits: 4.0 });
+      var wall = new THREE.Mesh(new THREE.PlaneBufferGeometry(3.0, 15.5, 40, 70), material)
+
+      wall.position.x = -1.6;
+      wall.rotation.y = Math.PI / 2.1;
+      wall.receiveShadow = true;
+
+      plane.add(wall);
+
+      /* Right Wall */
+      material = new THREE.MeshPhongMaterial({color: 0x000000, polygonOffset: true, polygonOffsetFactor: 1.0, polygonOffsetUnits: 4.0 });
+      var wall = new THREE.Mesh(new THREE.PlaneBufferGeometry(3.0, 15.5, 40, 70), material)
+
+      wall.position.x = 1.6;
+      wall.rotation.y = -Math.PI / 2.1;
+      wall.castShadow = true;
+      wall.receiveShadow = true;
+      plane.add(wall);
+
+      // Back wall 
+      material = new THREE.MeshPhongMaterial({color: 0x000000, polygonOffset: true, polygonOffsetFactor: 1.0, polygonOffsetUnits: 4.0 });
+      var wall = new THREE.Mesh(new THREE.PlaneBufferGeometry(3.0, 3.0, 40, 70), material)
+
+      wall.position.y = 5.6;
+      wall.rotation.x = Math.PI / 2.1;
+      wall.castShadow = true;
+      plane.add(wall);
+
+      /* add the character in the world scene */ 
+      character = new characterScene();
+      var obj = character.setup(this.scene);
+
+      
+
+      plane.add(obj);
+      this.scene.add(mesh);
+
+      mesh.lookAt( this.camera.position );
+
+      obj.traverse( function ( object ) {
+        if ( object instanceof THREE.Mesh ) {
+          object.castShadow = true;
+          // object.receiveShadow = true;
+        }
+      } );
+
+    }
+
+    this.update = function() {
+      
+      
+
+      time += 0.005;
+      /* call the update method of the character object */
+      character.update(this.controls);
+
+    }
+  }
+
+  var characterScene = function(){
+    var head, body, shoulders, hips, direction, theta;
+  };
+  characterScene.prototype = {
+
+    setup : function(scene){
+
+      var segmentSize = 32, cylinderWidth = 0.03;
+
+      theta=0.0
+
+      mesh     = new THREE.Object3D();
+      material = new THREE.MeshPhongMaterial(
+                          { color: 0xdddddd, 
+                            specular: 0x009900, 
+                            shininess: 30, 
+                            shading: THREE.FlatShading 
+                          }
+                        );
+
+      /* head */
+      head = new THREE.Mesh(new THREE.SphereGeometry(.2, segmentSize, segmentSize), material);
+      head.position.y = 0.39; // relative to the body
+
+      // Add facial features
+      
+      // nose
+      var noseMaterial = new THREE.MeshPhongMaterial( { color: 0x9B30FF, specular: 0x303030, shininess: 4 } );
+      noseMaterial.ambient.copy( noseMaterial.color );
+
+      cylinder = new THREE.Mesh(new THREE.CylinderGeometry( 0.03, 0.01, .10, 32 ), noseMaterial );
+      
+      cylinder.position.z = 0.2;
+      cylinder.rotation.x = -Math.PI / 2;
+      head.add( cylinder );
+      
+
+      // eyes
+      var eyeMaterial = new THREE.MeshPhongMaterial( { color: 0x000000, specular: 0x303030, shininess: 4 } );
+      eyeMaterial.ambient.copy( eyeMaterial.color );
+
+      var sphGeom = new THREE.SphereGeometry( .020, 32, 16 );
+      
+      // left eye
+      sphere = new THREE.Mesh( sphGeom, eyeMaterial );
+      sphere.position.x = -0.09;
+      sphere.position.y = 0.05;
+      sphere.position.z = 0.17;
+
+      head.add( sphere );
+
+      // eight eye
+      sphere = new THREE.Mesh( sphGeom, eyeMaterial );
+      sphere.position.x = 0.09;
+      sphere.position.y = 0.05;
+      sphere.position.z = 0.17;
+
+      head.add( sphere );
+
+      // Add a hat on top
+      var hatMaterial = new THREE.MeshPhongMaterial( { shininess: 100, color: 0x9B30FF } );
+      hatMaterial.ambient.copy( hatMaterial.color );
+
+      cylinder = new THREE.Mesh(
+        new THREE.CylinderGeometry( 0.42/2, 0.42/2, .010, 32 ), hatMaterial );
+      cylinder.position.x = 0;
+      cylinder.position.y = 0.18;
+      cylinder.position.z = 0;
+      head.add( cylinder );
+
+      cylinder = new THREE.Mesh(
+        new THREE.CylinderGeometry( 0.20/2, 0.30/2, .25, 32 ), hatMaterial );
+      cylinder.position.x = 0;
+      cylinder.position.y = 0.18;
+      cylinder.position.z = 0;
+      head.add( cylinder );
+
+      /* body */
+      body = new THREE.Mesh(
+                new THREE.CylinderGeometry(cylinderWidth, 
+                                           cylinderWidth, 
+                                           .4, /* height of body */ 
+                                           segmentSize, 
+                                           segmentSize), 
+                material);
+
+      /* shoulders */
+
+      shoulders = new THREE.Mesh(
+                new THREE.CylinderGeometry(cylinderWidth, 
+                                           cylinderWidth, 
+                                           .4, /* height of shoulders */ 
+                                           segmentSize, 
+                                           segmentSize), 
+                material);
+
+      
+      shoulders.position.y = 0.1;
+      shoulders.rotation.z = -Math.PI / 2;
+      
+      /* leftArm */
+
+      leftArm = new THREE.Mesh(
+              new THREE.CylinderGeometry(cylinderWidth, 
+                                         cylinderWidth, 
+                                         .2, /* height of leftArm */ 
+                                         segmentSize, 
+                                         segmentSize), 
+              material);
+
+      leftArm.rotation.z = -Math.PI / 2;
+      leftArm.position.y = -0.17;
+      leftArm.position.x = 0.12;
+
+      leftBottomArm = new THREE.Mesh(
+              new THREE.CylinderGeometry(cylinderWidth, 
+                                         cylinderWidth, 
+                                         .23, /* height of leftBottomArm */ 
+                                         segmentSize, 
+                                         segmentSize), 
+              material);
+
+      leftBottomArm.position.y = 0.23;
+
+      leftArm.add(leftBottomArm);
+
+      shoulders.add(leftArm);
+
+      /* rightArm */
+
+      rightArm = new THREE.Mesh(
+              new THREE.CylinderGeometry(cylinderWidth, 
+                                         cylinderWidth, 
+                                         .2, /* height of rightArm */ 
+                                         segmentSize, 
+                                         segmentSize), 
+              material);
+
+      rightArm.rotation.z = -Math.PI / 2;
+      rightArm.position.y = 0.17;
+      rightArm.position.x = 0.12;
+
+      rightBottomArm = new THREE.Mesh(
+              new THREE.CylinderGeometry(cylinderWidth, 
+                                         cylinderWidth, 
+                                         .23, /* height of rightBottomArm */ 
+                                         segmentSize, 
+                                         segmentSize), 
+              material);
+
+      rightBottomArm.position.y = 0.23;
+
+      rightArm.add(rightBottomArm);
+
+      shoulders.add(rightArm);
+
+      var glassMaterial = new THREE.MeshPhongMaterial( { color: 0xdfebff, specular: 0xFF0FFF, shininess: 1000, opacity: 0.7, transparent: true } );
+      
+      glassMaterial.ambient.copy( glassMaterial.color );
+
+      sphere = new THREE.Mesh(
+        new THREE.SphereGeometry( 1.16/9, 32, 16 ), glassMaterial );
+      sphere.position.y = -0.05;
+
+      body.add( sphere );
+
+
+      /* hip */
+
+      hips = new THREE.Mesh(
+                new THREE.CylinderGeometry(cylinderWidth, 
+                                           cylinderWidth, 
+                                           .26, /* height of hips */ 
+                                           segmentSize, 
+                                           segmentSize), 
+                material);
+
+      hips.rotation.z = -Math.PI / 2;
+      hips.position.y = -0.2;
+
+      /* leftLeg */
+
+      leftLeg = new THREE.Mesh(
+              new THREE.CylinderGeometry(cylinderWidth, 
+                                         cylinderWidth, 
+                                         .3, /* height of leftLeg */ 
+                                         segmentSize, 
+                                         segmentSize), 
+              material);
+
+      leftLeg.rotation.z = -Math.PI / 2;
+      leftLeg.position.y = -0.1;
+      leftLeg.position.x = 0.15;
+
+      leftBottomLeg = new THREE.Mesh(
+              new THREE.CylinderGeometry(cylinderWidth, 
+                                         cylinderWidth, 
+                                         .36, /* height of leftBottomLeg */ 
+                                         segmentSize, 
+                                         segmentSize), 
+              material);
+
+      leftBottomLeg.position.y = 0.34;
+
+      leftLeg.add(leftBottomLeg);
+
+      hips.add(leftLeg);
+
+
+      /* rightLeg */
+
+      rightLeg = new THREE.Mesh(
+              new THREE.CylinderGeometry(cylinderWidth, 
+                                         cylinderWidth, 
+                                         .3, /* height of rightLeg */ 
+                                         segmentSize, 
+                                         segmentSize), 
+              material);
+
+      rightLeg.rotation.z = -Math.PI / 2;
+      rightLeg.position.y = 0.1;
+      rightLeg.position.x = 0.15;
+
+      rightBottomLeg = new THREE.Mesh(
+              new THREE.CylinderGeometry(cylinderWidth, 
+                                         cylinderWidth, 
+                                         .36, /* height of rightBottomLeg */ 
+                                         segmentSize, 
+                                         segmentSize), 
+              material);
+
+      rightBottomLeg.position.y = 0.34;
+
+      rightLeg.add(rightBottomLeg);
+
+      hips.add(rightLeg);
+
+      /* Setup Body */
+      body.add(head);
+      body.add(shoulders);
+      body.add(hips);
+      
+      /* default body position */
+      body.position.y = 0.9;
+      body.position.z = 1.0;
+
+      mesh.add(body);
+      mesh.rotation.x = Math.PI/2
+
+      // Set default direction
+      direction = new THREE.Vector3(0, 0, 0);
+      mesh.castShadow = true;
+      return mesh;
+    },
+    update : function(controls){
+
+      var speedScale = 0.3;
+
+      direction.set(speedScale * (controls.left ?  -1 : controls.right ? 1 : 0), 
+                    0, 
+                    speedScale * (controls.up   ? -1 : controls.down  ?  1 : 0));
+
+      body.position.x += speedScale * direction.x * ((direction.z === 0) ? 0.14 : Math.sqrt(0.14));
+      body.position.z += speedScale * direction.z * ((direction.x === 0) ? 0.14 : Math.sqrt(0.14));
+
+      // TODO: character jumping
+      
+      /* rotate body in the right direction */
+      var angle = Math.atan2(direction.x, direction.z);
+      var difference = angle - body.rotation.y;
+      
+      if (Math.abs(difference) > Math.PI) {
+
+        if (difference > 0) 
+          body.rotation.y += 2 * Math.PI;
+        else 
+          body.rotation.y -= 2 * Math.PI;
+
+        difference = angle - body.rotation.y;
+      }
+      
+      if (difference !== 0) {
+        body.rotation.y += difference / 4;
+      }
+
+      head.rotation.x = (Math.sin(theta) * 0.05);
+
+      theta += 0.25;
+
+      shoulders.rotation.y = (Math.sin(theta) * 0.5) * (direction.x + direction.z);
+      
+      hips.rotation.y = 2 *(Math.sin(theta) * 0.5) * (direction.x + direction.z);
+      
+      leftLeg.rotation.y = (Math.sin(theta) * 0.75) * (direction.x + direction.z);
+      leftBottomLeg.rotation.x = -(Math.cos(theta) * 0.5) * (direction.x + direction.z);
+
+      rightLeg.rotation.y = (Math.cos(theta) * 0.75) * (direction.x + direction.z);
+      rightBottomLeg.rotation.x = -(Math.sin(theta) * 0.5) * (direction.x + direction.z);
+
+      leftArm.rotation.y = (Math.sin(theta) * 1.35) * (direction.x + direction.z);
+      leftBottomArm.rotation.x = -(Math.cos(theta) * 0.5) * (direction.x + direction.z);
+
+      rightArm.rotation.y = (Math.cos(theta) * 1.35) * (direction.x + direction.z);
+      rightBottomArm.rotation.x = -(Math.sin(theta) * 0.5) * (direction.x + direction.z);
+    }
+  }
+
+  worldScene.prototype = new SimpleScene;
+  new worldScene().init('globalScene');
+
+</script>
+<script src="C:\Users\Sonali\Downloads\code8\ThreeJSDemo.js"></script>
+</body>

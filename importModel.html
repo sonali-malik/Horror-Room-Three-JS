@@ -1,0 +1,201 @@
+
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - geometry - extrude shapes</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+
+		<style>
+			body {
+				font-family: Monospace;
+				background-color: #222;
+				margin: 0px;
+				overflow: hidden;
+			}
+			a {
+				color: #f80;
+			}
+		</style>
+	</head>
+
+	<body>
+
+		<script src="three.js"></script>
+		<script src="js/TrackballControls.js"></script>
+
+		<script>
+var morphs = [];
+			var clock = new THREE.Clock();
+			var container;
+			var animation;
+			var camera, scene, renderer, controls;
+
+			init();
+			animate();
+
+			function init() {
+
+				var info = document.createElement( 'div' );
+				info.style.position = 'absolute';
+				info.style.top = '10px';
+				info.style.width = '100%';
+				info.style.textAlign = 'center';
+				info.style.color = '#fff';
+				info.style.link = '#f80';
+				info.innerHTML = '<a href="http://threejs.org" target="_blank">three.js</a> webgl - geometry extrude shapes';
+				document.body.appendChild( info );
+
+				renderer = new THREE.WebGLRenderer();
+				renderer.setClearColor( 0x222222 );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				document.body.appendChild( renderer.domElement );
+
+				scene = new THREE.Scene();
+
+				// camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 1000 );
+				// camera.position.set( 0, 0, 500 );
+				camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 1, 10000 );
+        camera.position.z = 1000;
+
+				controls = new THREE.TrackballControls( camera, renderer.domElement );
+				controls.minDistance = 200;
+				controls.maxDistance = 500;
+
+				scene.add( new THREE.AmbientLight( 0x222222 ) );
+
+				var light = new THREE.PointLight( 0xffffff );
+				light.position.copy( camera.position );
+				scene.add( light );
+
+				//
+
+			var jsonLoader = new THREE.JSONLoader();
+        jsonLoader.load( "handConv2.js", createScene1 );
+function createScene1( geometry, materials ) {
+	var material = new THREE.MeshFaceMaterial( materials);
+	material.morphTargets = true;
+	material.overdraw=0.5;
+            var mesh = new THREE.Mesh( geometry,  material);
+
+            mesh.scale.set(500, 500, 500);
+            animation = new THREE.MorphAnimation( mesh );
+					animation.play();
+            scene.add(mesh);
+        }
+
+/*
+        var loader = new THREE.JSONLoader();
+				loader.load( 'handConv2.js', function ( geometry, materials ) {
+
+					// adjust color a bit
+
+					var material = materials[ 0 ];
+					material.morphTargets = true;
+					material.color.setHex( 0xffaaaa );
+
+					var faceMaterial = new THREE.MeshFaceMaterial( materials );
+
+
+// 					for ( var i = 0; i < 251; i ++ ) {
+
+// 						// random placement in a grid
+
+// 						// var x = ( ( i % 27 )  - 13.5 ) * 2 + THREE.Math.randFloatSpread( 1 );
+// 						// var z = ( Math.floor( i / 27 ) - 13.5 ) * 2 + THREE.Math.randFloatSpread( 1 );
+
+// 						// leave space for big monster
+
+// 						//if ( Math.abs( x ) < 2 && Math.abs( z ) < 2 ) continue;
+
+// 						morph = new THREE.MorphAnimMesh( geometry, faceMaterial );
+
+// 						// one second duration
+
+// 						morph.duration = 1000;
+
+// 						// random animation offset
+
+// 						morph.time = 1000 * Math.random();
+
+// 						var s = THREE.Math.randFloat( 0.00075, 0.001 );
+// 						morph.scale.set( s, s, s );
+
+// 						//morph.position.set( 500, 200, 200 );
+// 						morph.rotation.y = THREE.Math.randFloat( -0.25, 0.25 );
+
+// 						morph.matrixAutoUpdate = false;
+// 						morph.updateMatrix();
+// morph.scale.set(200, 200, 200);
+// 					//	scene.add( morph );
+
+// 						morphs.push( morph );
+
+// 					}
+
+				} );
+					loader.onLoadComplete=function(){
+          console.log('load completed');
+          
+          
+      }
+      */
+			}
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				render();
+				stats.update();
+
+			}
+
+			var radius = 600;
+			var theta = 0;
+
+			var prevTime = Date.now();
+
+			function render() {
+
+				theta += 0.1;
+
+				// camera.position.x = radius * Math.sin( THREE.Math.degToRad( theta ) );
+				// camera.position.z = radius * Math.cos( THREE.Math.degToRad( theta ) );
+
+				// camera.lookAt( camera.target );
+
+				if ( animation ) {
+
+					var time = Date.now();
+
+					animation.update( time - prevTime );
+
+					prevTime = time;
+
+				}
+
+
+				controls.update();
+		// 		var delta = clock.getDelta();
+
+		// 		// animate Collada model
+
+		// 		THREE.AnimationHandler.update( delta );
+		// if ( morphs.length ) {
+
+		// 			for ( var i = 0; i < morphs.length; i ++ )
+		// 				morphs[ i ].updateAnimation( 1000 * delta );
+
+		// 		}
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+
+</html>

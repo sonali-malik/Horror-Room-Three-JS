@@ -1,0 +1,2104 @@
+<html>
+<body>
+<script type='text/javascript'>
+
+// main
+
+function main()
+{
+	var figureHeightInPixels = 72;
+
+	var skeleton = SkeletonHelper.biped
+	(
+		figureHeightInPixels
+	);
+
+	var meshControlledBySkeleton = MeshHelper.biped(figureHeightInPixels);
+
+	var animationDefnWalk = SkeletonHelper.bipedAnimationDefnWalk();
+
+	var camera = new Camera
+	(
+		"Camera0",
+		50, // focalLength
+		new Coords(100, 100, 100), // viewSize
+		new Location
+		(
+			new Coords(100, 100, -136),
+			new Orientation
+			(
+				new Coords(-1, -1, 1), // forward
+				new Coords(0, 0, 1) // down
+			)
+		)
+	);
+
+	var world = new World
+	(
+		skeleton, 
+		meshControlledBySkeleton,
+		animationDefnWalk,
+		camera, 
+		1 // secondsPerRunCycle
+	);
+
+	Globals.Instance.initialize
+	(
+		world,
+		20 // timerTicksPerSecond 
+	);
+}
+
+// extensions
+
+Array.prototype.addLookups = function(propertyPathForKey)
+{
+	var propertyNameAncestryForKey = propertyPathForKey.split(".");
+
+	for (var i = 0; i < this.length; i++)
+	{
+		var item = this[i];
+
+		var keyValue = item[propertyNameAncestryForKey[0]];
+
+		for (var p = 1; p < propertyNameAncestryForKey.length; p++)
+		{
+			var propertyNameForKey = propertyNameAncestryForKey[p];
+			keyValue = keyValue[propertyNameForKey];
+		}
+		this[keyValue] = item;
+	}
+}
+
+// classes
+
+function AnimationDefn(name, keyframes)
+{
+	this.name = name;
+	this.keyframes = keyframes;
+
+	this.numberOfFramesTotal = 
+		this.keyframes[this.keyframes.length - 1].frameIndex
+		- this.keyframes[0].frameIndex;
+
+	this.propagateTransformsToAllKeyframes();
+}
+{
+	AnimationDefn.prototype.propagateTransformsToAllKeyframes = function()
+	{
+		var propertyNamesAll = [];
+
+		for (var f = 0; f < this.keyframes.length; f++)
+		{
+			var keyframe = this.keyframes[f];
+			var transforms = keyframe.transforms;
+
+			for (var t = 0; t < transforms.length; t++)
+			{
+				var transform = transforms[t];
+				var propertyName = transform.propertyName;
+				if (propertyNamesAll[propertyName] == null)
+				{
+					propertyNamesAll[propertyName] = propertyName;
+					propertyNamesAll.push(propertyName);
+				}
+			}
+		}
+
+		var keyframe = null;
+		var keyframePrev = null;
+
+		for (var f = 0; f < this.keyframes.length; f++)
+		{
+			keyframePrev = keyframe;
+			keyframe = this.keyframes[f];
+
+			var transforms = keyframe.transforms;
+
+			for (var p = 0; p < propertyNamesAll.length; p++)
+			{
+				var propertyName = propertyNamesAll[p];
+				if (transforms[propertyName] == null)
+				{
+					var keyframeNext = null;
+
+					for (var g = f + 1; g < this.keyframes.length; g++)
+					{
+						var keyframeFuture = this.keyframes[g];
+						var transformFuture = keyframeFuture.transforms[propertyName];
+						if (transformFuture != null)
+						{
+							keyframeNext = keyframeFuture;
+							break;
+						}
+					}
+
+					if (keyframePrev != null && keyframeNext != null)
+					{
+						var transformPrev = keyframePrev.transforms[propertyName];
+						var transformNext = keyframeNext.transforms[propertyName];
+
+						var numberOfFramesFromPrevToNext = 
+							keyframeNext.frameIndex
+							- keyframePrev.frameIndex;
+
+						var numberOfFramesFromPrevToCurrent = 
+							keyframe.frameIndex
+							- keyframePrev.frameIndex;
+
+						var fractionOfProgressFromPrevToNext = 
+							numberOfFramesFromPrevToCurrent 
+							/ numberOfFramesFromPrevToNext;
+
+						var transformNew = transformPrev.interpolateWith
+						(
+							transformNext,
+							fractionOfProgressFromPrevToNext
+						);
+						transforms[propertyName] = transformNew;
+						transforms.push(transformNew);
+					}
+				}
+			}
+		}
+	}
+}
+
+function AnimationKeyframe(frameIndex, transforms)
+{
+	this.frameIndex = frameIndex;
+	this.transforms = transforms;
+
+	this.transforms.addLookups("propertyName");
+}
+{
+	AnimationKeyframe.prototype.interpolateWith = function(other, fractionOfProgressTowardOther)
+	{
+		var transformsInterpolated = [];
+
+		for (var i = 0; i < this.transforms.length; i++)
+		{
+			var transformThis = this.transforms[i];
+			var transformOther = other.transforms[transformThis.propertyName];
+
+			var transformInterpolated = transformThis.interpolateWith
+			(
+				transformOther,
+				fractionOfProgressTowardOther
+			);
+
+			transformsInterpolated.push(transformInterpolated);
+		}
+
+		var returnValue = new AnimationKeyframe
+		(
+			null, // frameIndex
+			transformsInterpolated
+		);
+
+		return returnValue;
+	}
+}
+
+function AnimationRun(defn, transformable)
+{
+	this.defn = defn;	
+	this.transformable = transformable;
+}
+{
+	AnimationRun.prototype.frameCurrent = function()
+	{
+		var returnValue = null;
+
+		var framesSinceBeginningOfCycle = 
+			Globals.Instance.timerTicksSoFar 
+			% this.defn.numberOfFramesTotal;
+
+		var i;
+
+		for (i = this.defn.keyframes.length - 1; i >= 0; i--)
+		{
+			keyframe = this.defn.keyframes[i];
+
+			if (keyframe.frameIndex <= framesSinceBeginningOfCycle)
+			{
+				break;
+			}
+		}
+		
+		var keyframe = this.defn.keyframes[i];
+		var framesSinceKeyframe = framesSinceBeginningOfCycle - keyframe.frameIndex;
+
+		var keyframeNext = this.defn.keyframes[i + 1];
+		var numberOfFrames = keyframeNext.frameIndex - keyframe.frameIndex;
+		var fractionOfProgressFromKeyframeToNext = framesSinceKeyframe / numberOfFrames;
+
+		returnValue = keyframe.interpolateWith
+		(
+			keyframeNext, 
+			fractionOfProgressFromKeyframeToNext
+		);
+
+		return returnValue;
+	}
+
+	AnimationRun.prototype.updateForTimerTick = function()
+	{
+		var frameCurrent = this.frameCurrent();
+
+		var transforms = frameCurrent.transforms;
+
+		for (var i = 0; i < transforms.length; i++)
+		{
+			transforms[i].transform(this.transformable);
+		}
+	}
+}
+
+function Bone(name, length, orientation, children, isVisible)
+{
+	this.name = name;
+	this.length = length;
+	this.orientation = orientation;
+	this.children = children;
+	this.isVisible = (isVisible == null ? true : isVisible);
+
+	for (var i = 0; i < this.children.length; i++)
+	{
+		var child = this.children[i];
+		child.parent = this;
+	}
+}
+{
+	// instance methods
+
+	Bone.prototype.pos = function(returnValue)
+	{
+		var returnValue = new Coords(0, 0, 0);
+
+		var bone = this.parent;
+
+		while (bone != null)
+		{
+			returnValue.add
+			(
+				bone.orientation.forward.clone().multiplyScalar
+				(
+					bone.length
+				)
+			);
+
+			bone = bone.parent;
+		}
+
+		return returnValue;
+	}
+
+	// cloneable
+
+	Bone.prototype.clone = function()
+	{
+		return new Bone
+		(
+			this.name,
+			this.length,
+			this.orientation.clone(),
+			Cloneable.cloneMany(this.children),
+			this.isVisible
+		);
+	}
+
+	Bone.prototype.overwriteWith = function(other)
+	{
+		this.orientation.overwriteWith(other.orientation);
+		Cloneable.overwriteManyWithOthers(this.children, other.children);
+	}
+}
+
+function BoneInfluence
+(
+	boneName,
+	vertexIndicesControlled
+)
+{
+	this.boneName = boneName;
+	this.vertexIndicesControlled = vertexIndicesControlled;
+}
+{
+	// static methods
+
+	BoneInfluence.buildManyForBonesAndVertexGroups = function(bones, vertexGroups)
+	{
+		var boneInfluences = [];
+
+		for (var i = 0; i < vertexGroups.length; i++)
+		{
+			var vertexGroup = vertexGroups[i];
+			var boneName = vertexGroup.name;
+
+			var bone = bones[boneName];
+	
+			if (bone != null)
+			{
+				var boneInfluence = new BoneInfluence
+				(
+					boneName,
+					vertexGroup.vertexIndices.slice()
+				);
+
+				boneInfluences.push(boneInfluence);
+			}
+		}
+
+		return boneInfluences;
+	}
+}
+
+function Camera(name, focalLength, viewSize, loc)
+{
+	this.name = name;
+	this.focalLength = focalLength;
+	this.viewSize = viewSize;
+	this.loc = loc;
+
+	this.viewSizeHalf = this.viewSize.clone().divideScalar(2);
+}
+{
+	Camera.prototype.convertWorldCoordsToViewCoords = function(coordsToConvert)
+	{
+		var orientation = this.loc.orientation;
+
+		coordsToConvert.subtract
+		(
+			this.loc.pos
+		).overwriteWithXYZ
+		(
+			coordsToConvert.dotProduct(orientation.right),
+			coordsToConvert.dotProduct(orientation.down),
+			coordsToConvert.dotProduct(orientation.forward)
+		).add
+		(
+			this.viewSizeHalf
+		);	
+	}
+}
+
+function Cloneable()
+{}
+{
+	Cloneable.cloneMany = function(cloneablesToClone)
+	{
+		var returnValues = [];
+
+		for (var i = 0; i < cloneablesToClone.length; i++)
+		{
+			returnValues.push(cloneablesToClone[i].clone());
+		}
+
+		return returnValues;
+	}
+
+	Cloneable.overwriteManyWithOthers = function(cloneablesToOverwrite, cloneablesToOverwriteWith)
+	{
+		for (var i = 0; i < cloneablesToOverwrite.length; i++)
+		{
+			cloneablesToOverwrite[i].overwriteWith(cloneablesToOverwriteWith[i]);
+		}
+	}
+}
+
+function Coords(x, y, z)
+{
+	this.x = x;
+	this.y = y;
+	this.z = z;
+}
+{
+	Coords.prototype.add = function(other)
+	{
+		this.x += other.x;
+		this.y += other.y;
+		this.z += other.z;
+
+		return this;
+	}
+
+	Coords.prototype.clone = function()
+	{
+		return new Coords(this.x, this.y, this.z);
+	}
+
+	Coords.prototype.crossProduct = function(other)
+	{
+		return new Coords
+		(
+			this.y * other.z - this.z * other.y,
+			this.z * other.x - this.x * other.z,
+			this.x * other.y - this.y * other.x
+		);
+	}
+
+	Coords.prototype.divide = function(other)
+	{
+		this.x /= other.x;
+		this.y /= other.y;
+		this.z /= other.z;
+
+		return this;
+	}
+
+	Coords.prototype.divideScalar = function(scalar)
+	{
+		this.x /= scalar;
+		this.y /= scalar;
+		this.z /= scalar;
+
+		return this;
+	}
+
+	Coords.prototype.dotProduct = function(other)
+	{
+		return this.x * other.x + this.y * other.y + this.z * other.z;
+	}
+
+	Coords.prototype.equals = function(other)
+	{
+		var returnValue = 
+		(
+			this.x == other.x
+			&& this.y == other.y
+			&& this.z == other.z
+		);
+
+		return returnValue;
+	}
+
+	Coords.prototype.magnitude = function()
+	{
+		return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
+	}
+
+	Coords.prototype.multiply = function(other)
+	{
+		this.x *= other.x;
+		this.y *= other.y;
+		this.z *= other.z;
+
+		return this;
+	}
+
+	Coords.prototype.multiplyScalar = function(scalar)
+	{
+		this.x *= scalar;
+		this.y *= scalar;
+		this.z *= scalar;
+
+		return this;
+	}
+
+	Coords.prototype.normalize = function()
+	{
+		return this.divideScalar(this.magnitude());
+	}
+
+	Coords.prototype.overwriteWith = function(other)
+	{
+		this.x = other.x;
+		this.y = other.y;
+		this.z = other.z;
+
+		return this;
+	}
+
+	Coords.prototype.overwriteWithXYZ = function(x, y, z)
+	{
+		this.x = x;
+		this.y = y;
+		this.z = z;
+
+		return this;
+	}
+
+	Coords.prototype.rotateXYZ = function()
+	{
+		var temp = this.x;
+		this.x = this.y;
+		this.y = this.z;
+		this.z = temp;
+
+		return this;	
+	}
+
+	Coords.prototype.subtract = function(other)
+	{
+		this.x -= other.x;
+		this.y -= other.y;
+		this.z -= other.z;
+
+		return this;
+	}
+}
+
+function DisplayHelper()
+{
+	this.tempPos = new Coords(0, 0, 0);
+	this.drawPos = new Coords(0, 0, 0);
+}
+{
+	DisplayHelper.prototype.drawBackgroundForCamera = function(camera)
+	{
+		var viewSize = camera.viewSize;
+
+		this.graphics.fillStyle = "White";
+		this.graphics.fillRect(0, 0, viewSize.x, viewSize.y);
+		this.graphics.strokeStyle = "LightGray";
+		this.graphics.strokeRect(0, 0, viewSize.x, viewSize.y);
+	}
+
+	DisplayHelper.prototype.drawBoneForCamera = function(bone, camera)
+	{
+		var bonePos = this.tempPos.overwriteWith(bone.pos());
+
+		if (bone.isVisible == true)
+		{
+			this.graphics.beginPath();
+
+			camera.convertWorldCoordsToViewCoords
+			(
+				this.drawPos.overwriteWith(bonePos)
+			);
+
+			this.graphics.moveTo(this.drawPos.x, this.drawPos.y);
+
+			bonePos.add
+			(
+				bone.orientation.forward.clone().multiplyScalar
+				(
+					bone.length
+				)
+			);
+
+			camera.convertWorldCoordsToViewCoords
+			(
+				this.drawPos.overwriteWith(bonePos)
+			);
+	
+			this.graphics.lineTo(this.drawPos.x, this.drawPos.y);
+	
+			this.graphics.stroke();
+		}
+
+		for (var i = 0; i < bone.children.length; i++)
+		{
+			var boneChild = bone.children[i];
+
+			this.drawBoneForCamera
+			(
+				boneChild, 
+				camera
+			)
+		}
+	}
+
+	DisplayHelper.prototype.drawMeshForCamera = function(mesh, camera)
+	{
+		for (var f = 0; f < mesh.vertexIndicesForFaces.length; f++)
+		{
+			var vertexIndicesForFace = mesh.vertexIndicesForFaces[f];
+
+			for (var vi = 0; vi < vertexIndicesForFace.length; vi++)
+			{
+				var viNext = vi + 1;
+				if (viNext >= vertexIndicesForFace.length)
+				{
+					viNext = 0;
+				}
+
+				var vertexIndex = vertexIndicesForFace[vi];
+				var vertexIndexNext = vertexIndicesForFace[viNext];
+				var vertexPos = mesh.vertices[vertexIndex];
+				var vertexPosNext = mesh.vertices[vertexIndexNext];
+
+				this.graphics.beginPath();
+
+				camera.convertWorldCoordsToViewCoords
+				(
+					this.drawPos.overwriteWith(vertexPos)
+				);
+
+				this.graphics.moveTo
+				(
+					this.drawPos.x, this.drawPos.y
+				);
+
+				camera.convertWorldCoordsToViewCoords
+				(
+					this.drawPos.overwriteWith(vertexPosNext)
+				);
+
+				this.graphics.lineTo
+				(
+					this.drawPos.x, this.drawPos.y
+				);
+
+				this.graphics.stroke();				
+			}
+		}
+	}
+
+	DisplayHelper.prototype.drawSkeletonForCamera = function(skeleton, camera)
+	{
+		this.graphics.strokeStyle = "Cyan";
+
+		this.drawBoneForCamera
+		(
+			skeleton.boneRoot,
+			camera
+		);
+	}
+
+	DisplayHelper.prototype.drawWorld = function(world)
+	{
+		this.drawBackgroundForCamera(world.camera);
+		this.drawMeshForCamera
+		(
+			world.meshControlledBySkeletonPosed,
+			world.camera
+		);
+		this.drawSkeletonForCamera(world.skeletonPosed, world.camera);
+	}
+
+	DisplayHelper.prototype.initialize = function(viewSize)
+	{
+		this.canvas = document.createElement("canvas");
+
+		this.canvas.width = viewSize.x;
+		this.canvas.height = viewSize.y;
+
+		this.graphics = this.canvas.getContext("2d");
+
+		document.body.appendChild(this.canvas);
+	}
+}
+
+function Globals()
+{
+	// do nothing	
+}
+{
+	Globals.Instance = new Globals();
+
+	Globals.prototype.handleEventTimerTick = function()
+	{
+		this.timerTicksSoFar++;
+
+		this.world.updateForTimerTick();
+	}
+
+	Globals.prototype.initialize = function(world, timerTicksPerSecond)
+	{
+		this.world = world;
+
+		this.displayHelper = new DisplayHelper();
+		this.inputHelper = new InputHelper();
+
+		this.displayHelper.initialize(this.world.camera.viewSize);
+		this.inputHelper.initialize();
+
+		this.timerTicksPerSecond = timerTicksPerSecond;
+		this.millisecondsPerTimerTick = 1000 / this.timerTicksPerSecond;
+		this.timerTicksSoFar = 0;
+		
+		setInterval
+		(
+			"Globals.Instance.handleEventTimerTick()", 
+			this.millisecondsPerTimerTick
+		)	
+	}
+}
+
+function InputHelper()
+{}
+{
+	InputHelper.prototype.handleEventKeyDown = function(event)
+	{
+		var keyCode = event.keyCode;		
+		var directionToRotate = 0;
+
+		if (keyCode == 65) // a
+		{
+			directionToRotate = -1;	
+		}
+		else if (keyCode == 68) // d
+		{
+			directionToRotate = 1;			
+		}
+
+		if (directionToRotate != 0)
+		{
+			// hack
+			// Camera rotation could be handled more elegantly
+			// using motion constraints of some kind,
+			// but this gets the job done for our purposes.
+
+			var camera = Globals.Instance.world.camera;
+			var cameraLoc = camera.loc;
+			var cameraPos = cameraLoc.pos;
+			var cameraZOriginal = cameraPos.z;
+
+			var cyclesToRotate = .02;
+
+			var quaternionForRotation = Quaternion.fromAxisAndCyclesToRotate
+			(
+				new Coords(0, 0, 1),
+				cyclesToRotate * directionToRotate
+			);
+
+			quaternionForRotation.applyToCoordsAsRotation(cameraPos);
+		
+			camera.loc.orientation = new Orientation
+			(
+				cameraPos.clone().add
+				(
+					new Coords(0, 0, 0 - cameraZOriginal / 4)
+				).multiplyScalar
+				(
+					-1
+				),
+
+				new Coords(0, 0, 1) // down
+			);
+		}
+	}
+
+	InputHelper.prototype.initialize = function()
+	{
+		document.body.onkeydown = this.handleEventKeyDown.bind(this);
+	}
+}
+
+function Location(pos, orientation)
+{
+	this.pos = pos;
+	this.orientation = orientation;
+}
+
+function Mesh(name, vertices, vertexIndicesForFaces, vertexGroups)
+{
+	this.name = name;
+	this.vertices = vertices;
+	this.vertexIndicesForFaces = vertexIndicesForFaces;
+	this.vertexGroups = vertexGroups;
+}
+{
+	Mesh.prototype.clone = function()
+	{
+		return new Mesh
+		(
+			this.name,
+			Cloneable.cloneMany(this.vertices),
+			this.vertexIndicesForFaces.slice(),
+			Cloneable.cloneMany(this.vertexGroups)
+		);
+	}
+
+	Mesh.prototype.overwriteWith = function(other)
+	{
+		for (var v = 0; v < this.vertices.length; v++)
+		{
+			var vertexThis = this.vertices[v];
+			var vertexOther = other.vertices[v];
+
+			vertexThis.overwriteWith(vertexOther);
+		}
+
+		return this;
+	}
+}
+
+function MeshHelper()
+{
+	// static class
+}
+{
+	MeshHelper.biped = function(heightInPixels)
+	{
+		var heightOver2 = heightInPixels / 2;
+		var heightOver3 = heightInPixels / 3;
+		var heightOver4 = heightInPixels / 4;
+		var heightOver6 = heightInPixels / 6;
+		var heightOver8 = heightInPixels / 8;
+		var heightOver9 = heightInPixels / 9;
+		var heightOver12 = heightInPixels / 12;
+		var heightOver18 = heightInPixels / 18;
+		var heightOver24 = heightInPixels / 24;
+		var heightOver36 = heightInPixels / 36;
+
+		var returnValue = MeshHelper.meshesJoin
+		(
+			"Biped",
+			[
+				MeshHelper.buildBox
+				(
+					"Pelvis", 
+					new Coords(heightOver12, heightOver24, heightOver24), 
+					new Coords(0, 0, -heightOver2)
+				),
+
+				MeshHelper.buildBox
+				(
+					"Spine.1", 
+					new Coords(heightOver12, heightOver24, heightOver6),
+					new Coords(0, 0, 0 - heightOver2 - heightOver4)
+				),
+
+				MeshHelper.buildBox
+				(
+					"Head", 
+					new Coords(heightOver18, heightOver18, heightOver18),
+					new Coords(0, heightOver36, 0 - heightInPixels)
+				),
+
+				MeshHelper.buildBox
+				(
+					"Thigh.L", 
+					new Coords(heightOver36, heightOver36, heightOver8), 
+					new Coords(heightOver18, 0, 0 - heightOver2 + heightOver12)
+				),
+
+				MeshHelper.buildBox
+				(
+					"Shin.L", 
+					new Coords(heightOver36, heightOver36, heightOver8), 
+					new Coords(heightOver18, 0, 0 - heightOver6)
+				),
+
+				MeshHelper.buildBox
+				(
+					"Foot.L", 
+					new Coords(heightOver36, heightOver12, heightOver36), 
+					new Coords(heightOver18, heightOver12, 0 - heightOver36)
+				),
+
+				MeshHelper.buildBox
+				(
+					"Bicep.L", 
+					new Coords(heightOver36, heightOver36, heightOver12), 
+					new Coords(heightOver6, 0, 0 - heightOver2 - heightOver3)
+				),
+
+				MeshHelper.buildBox
+				(
+					"Forearm.L", 
+					new Coords(heightOver36, heightOver36, heightOver12), 
+					new Coords(heightOver6, 0, 0 - heightOver2 - heightOver4 + heightOver8)
+				),
+
+				MeshHelper.buildBox
+				(
+					"Thigh.R", 
+					new Coords(heightOver36, heightOver36, heightOver8), 
+					new Coords(0 - heightOver18, 0, 0 - heightOver2 + heightOver12)
+				),
+
+				MeshHelper.buildBox
+				(
+					"Shin.R", 
+					new Coords(heightOver36, heightOver36, heightOver8), 
+					new Coords(0 - heightOver18, 0, 0 - heightOver6)
+				),
+
+				MeshHelper.buildBox
+				(
+					"Foot.R", 
+					new Coords(heightOver36, heightOver12, heightOver36), 
+					new Coords(0 - heightOver18, heightOver12, 0 - heightOver36)
+				),
+
+				MeshHelper.buildBox
+				(
+					"Bicep.R", 
+					new Coords(heightOver36, heightOver36, heightOver12), 
+					new Coords(0 - heightOver6, 0, 0 - heightOver2 - heightOver3)
+				),
+
+				MeshHelper.buildBox
+				(
+					"Forearm.R", 
+					new Coords(heightOver36, heightOver36, heightOver12), 
+					new Coords(0 - heightOver6, 0, 0 - heightOver2 - heightOver4 + heightOver8)
+				),			
+			]
+		);
+
+		// fix
+		MeshHelper.meshVerticesMergeIfWithinDistance(returnValue, 3);
+
+		return returnValue;
+	}
+
+	MeshHelper.buildBox = function(name, size, pos)
+	{
+		var returnMesh = MeshHelper.buildCube(name);
+
+		MeshHelper.transformVerticesOfMesh
+		(
+			new TransformScale(size),
+			returnMesh
+		);
+
+		MeshHelper.transformVerticesOfMesh
+		(
+			new TransformTranslate
+			(
+				new Coords(0, 0, size.z / 2)
+			),
+			returnMesh
+		);		
+
+		MeshHelper.transformVerticesOfMesh
+		(
+			new TransformTranslate(pos),
+			returnMesh
+		);		
+
+		return returnMesh;
+	}
+
+	MeshHelper.buildCube = function(name)
+	{
+		var returnMesh = new Mesh
+		(
+			name,
+			// vertices
+			[
+				new Coords(-1, -1, -1),
+				new Coords(1, -1, -1),
+				new Coords(1, 1, -1),
+				new Coords(-1, 1, -1),
+	
+				new Coords(-1, -1, 1),
+				new Coords(1, -1, 1),
+				new Coords(1, 1, 1),
+				new Coords(-1, 1, 1),
+			],
+			// vertexIndicesForFaces
+			[
+				[ 0, 1, 2, 3 ],
+	
+				[ 0, 1, 5, 4 ],
+				[ 1, 2, 6, 5 ],
+				[ 2, 3, 7, 6 ],
+				[ 3, 0, 4, 7 ], 
+		
+				[ 4, 5, 6, 7 ],
+			]
+		);
+
+		return returnMesh;
+	}
+
+	MeshHelper.meshVerticesMergeIfWithinDistance = function(mesh, distanceToMergeWithin)
+	{
+		var vertices = mesh.vertices;
+
+		var verticesDuplicated = [];
+		var vertexIndexDuplicateToOriginalLookup = [];
+
+		var displacementBetweenVertices = new Coords(0, 0, 0);
+
+		for (var i = 0; i < vertices.length; i++)
+		{
+			var vertexToConsider = vertices[i];
+		
+			for (j = 0; j < i; j++)
+			{
+				var vertexAlreadyConsidered = vertices[j];
+
+				displacementBetweenVertices.overwriteWith
+				(
+					vertexToConsider
+				).subtract
+				(
+					vertexAlreadyConsidered
+				);
+
+				var distanceBetweenVertices = displacementBetweenVertices.magnitude();
+
+				if (distanceBetweenVertices <= distanceToMergeWithin)
+				{
+					// if the original is not itself a duplicate
+					if (vertexIndexDuplicateToOriginalLookup[j] == null)
+					{
+						verticesDuplicated.push(vertexToConsider);
+						vertexIndexDuplicateToOriginalLookup[i] = j;
+						break;
+					}
+				}
+			}
+		}
+
+		var verticesMinusDuplicates = vertices.slice();
+
+		for (var i = 0; i < verticesDuplicated.length; i++)
+		{
+			var vertexDuplicated = verticesDuplicated[i];
+
+			verticesMinusDuplicates.splice
+			(
+				verticesMinusDuplicates.indexOf(vertexDuplicated),
+				1
+			);
+		}
+	
+		for (var f = 0; f < mesh.vertexIndicesForFaces.length; f++)
+		{
+			var vertexIndices = mesh.vertexIndicesForFaces[f];
+
+			for (var vi = 0; vi < vertexIndices.length; vi++)
+			{
+				var vertexIndexToUpdate = vertexIndices[vi];
+				var vertexToUpdate = vertices[vertexIndexToUpdate];
+				var isVertexDuplicated = (verticesDuplicated.indexOf(vertexToUpdate) >= 0);
+				if (isVertexDuplicated == true)
+				{
+					var vertexIndexOriginal = vertexIndexDuplicateToOriginalLookup[vertexIndexToUpdate];
+					vertexToUpdate = vertices[vertexIndexOriginal];
+
+				}	
+				var vertexIndexUpdated = verticesMinusDuplicates.indexOf
+				(
+					vertexToUpdate
+				);
+
+				vertexIndices[vi] = vertexIndexUpdated;	
+			}
+		}
+
+		for (var g = 0; g < mesh.vertexGroups.length; g++)
+		{
+			var vertexGroup = mesh.vertexGroups[g];
+			var vertexIndices = vertexGroup.vertexIndices;
+
+			for (var vi = 0; vi < vertexIndices.length; vi++)
+			{
+				var vertexIndexToUpdate = vertexIndices[vi];
+				var vertexToUpdate = vertices[vertexIndexToUpdate];
+				var isVertexDuplicated = (verticesDuplicated.indexOf(vertexToUpdate) >= 0);
+				if (isVertexDuplicated == true)
+				{
+					var vertexIndexOriginal = vertexIndexDuplicateToOriginalLookup[vertexIndexToUpdate];
+					vertexToUpdate = vertices[vertexIndexOriginal];
+
+				}	
+				var vertexIndexUpdated = verticesMinusDuplicates.indexOf
+				(
+					vertexToUpdate
+				);
+				vertexIndices[vi] = vertexIndexUpdated;
+			}
+		}
+
+		mesh.vertices = verticesMinusDuplicates;
+	}
+
+	MeshHelper.meshesJoin = function(name, meshesToJoin)
+	{
+		var verticesAll = [];
+		var vertexIndicesForFacesAll = [];
+		var vertexGroups = [];
+		
+		for (var m = 0; m < meshesToJoin.length; m++)
+		{
+			var meshToJoin = meshesToJoin[m];
+
+			var numberOfVerticesPrev = verticesAll.length;
+			var numberOfFacesPrev = vertexIndicesForFacesAll.length;
+
+			verticesAll = verticesAll.concat
+			(
+				meshToJoin.vertices
+			);
+
+			vertexIndicesForFacesAll = vertexIndicesForFacesAll.concat
+			(
+				meshToJoin.vertexIndicesForFaces
+			);
+
+			for (var f = numberOfFacesPrev; f < vertexIndicesForFacesAll.length; f++)
+			{
+				var vertexIndicesForFace = vertexIndicesForFacesAll[f];
+
+				for (var vi = 0; vi < vertexIndicesForFace.length; vi++)
+				{
+					var vertexIndex = vertexIndicesForFace[vi];
+					vertexIndex += numberOfVerticesPrev;
+
+					vertexIndicesForFace[vi] = vertexIndex;
+				}	
+			}
+
+			var vertexIndicesInVertexGroup = [];
+			for (var v = 0; v < meshToJoin.vertices.length; v++)
+			{
+				vertexIndicesInVertexGroup.push(numberOfVerticesPrev + v);	
+			}
+
+			var vertexGroup = new VertexGroup
+			(
+				meshToJoin.name,
+				vertexIndicesInVertexGroup
+			);
+
+			vertexGroups.push(vertexGroup);
+		}
+
+		var returnMesh = new Mesh
+		(
+			name,
+			verticesAll,
+			vertexIndicesForFacesAll,
+			vertexGroups
+		);
+
+		return returnMesh;
+	}
+
+	MeshHelper.skeletonToMesh = function(skeleton)
+	{
+		var boneRoot = skeleton.boneRoot;
+
+		var bonePos = new Coords(0, 0, 0);
+
+		var vertexPositions = 
+		[
+			bonePos
+		];
+
+		var vertexIndicesForFaces = [];
+
+		MeshHelper.skeletonToMesh_BoneAndDescendantsAddToLists
+		(
+			boneRoot,
+			bonePos,
+			0, // vertexIndexPrev
+			vertexPositions,
+			vertexIndicesForFaces
+		);
+
+		var returnValue = new Mesh
+		(
+			skeleton.name + "_Mesh",
+			vertexPositions,
+			vertexIndicesForFaces
+		);
+
+		return returnValue;
+	}
+
+	MeshHelper.skeletonToMesh_BoneAndDescendantsAddToLists = function
+	(
+		bone, 
+		bonePos,
+		vertexIndexPrev,
+		vertexPositions,
+		vertexIndicesForFaces
+	)
+	{
+		var vertexIndexNext = vertexPositions.length;
+
+		if (bone.isVisible == true)
+		{
+			vertexIndicesForFaces.push
+			(
+				[
+					vertexIndexPrev,
+					vertexIndexNext,
+				]
+			);
+		}
+
+		bonePos = bonePos.clone().add
+		(
+			bone.orientation.forward.clone().multiplyScalar
+			(
+				bone.length
+			)
+		);
+
+		vertexPositions.push(bonePos);
+
+		for (var i = 0; i < bone.children.length; i++)
+		{
+			var child = bone.children[i];
+			this.skeletonToMesh_BoneAndDescendantsAddToLists
+			(
+				child,
+				bonePos,
+				vertexIndexNext,
+				vertexPositions,
+				vertexIndicesForFaces
+			);
+		}
+	}
+
+	MeshHelper.transformVerticesOfMesh = function(transform, mesh)
+	{
+		Transform.applyTransformToCoordsMany(transform, mesh.vertices);
+	}
+}
+
+function Orientation(forward, down)
+{
+	this.forward = forward.clone().normalize();
+	this.down = down.clone().normalize();
+	this.right = this.down.crossProduct(this.forward).normalize();
+
+	this.down = this.forward.crossProduct(this.right).normalize();
+
+	this.axes = 
+	[
+		this.forward,
+		this.right,
+		this.down,
+	];
+}
+{
+	Orientation.prototype.clone = function()
+	{
+		return new Orientation
+		(
+			this.forward,
+			this.down
+		);
+	}
+
+	Orientation.prototype.overwriteWith = function(other)
+	{
+		this.forward.overwriteWith(other.forward);
+		this.right.overwriteWith(other.right);
+		this.down.overwriteWith(other.down);
+
+		return this;
+	}
+}
+
+function Quaternion(w, x, y, z)
+{
+	this.w = w;
+	this.x = x;
+	this.y = y;
+	this.z = z;
+}
+{
+	// static methods
+
+	Quaternion.fromAxisAndCyclesToRotate = function(axisToRotateAround, cyclesToRotate)
+	{
+		var radiansToRotateHalf = cyclesToRotate * Math.PI;		
+
+		var sineOfRadiansToRotateHalf = Math.sin(radiansToRotateHalf);
+	
+		var w = Math.cos(radiansToRotateHalf);
+		var x = axisToRotateAround.x * sineOfRadiansToRotateHalf;
+		var y = axisToRotateAround.y * sineOfRadiansToRotateHalf;
+		var z = axisToRotateAround.z * sineOfRadiansToRotateHalf;
+
+		var returnValue = new Quaternion(w, x, y, z).normalize();
+
+		return returnValue;
+	}
+
+
+	// instance methods
+
+	Quaternion.prototype.applyToCoordsAsRotation = function(coordsToRotate)
+	{
+		var coordsToRotateAsQuaternion = new Quaternion
+		(
+			0,
+			coordsToRotate.x,
+			coordsToRotate.y,
+			coordsToRotate.z
+		);
+
+		var result = this.clone().multiply
+		(
+			coordsToRotateAsQuaternion	
+		).multiply
+		(
+			this.clone().invert()
+		);
+
+		coordsToRotate.overwriteWithXYZ(result.x, result.y, result.z);
+
+		return coordsToRotate;
+	}	
+
+	Quaternion.prototype.clone = function()
+	{
+		return new Quaternion(this.w, this.x, this.y, this.z);
+	}
+
+	Quaternion.prototype.divide = function(divisor)
+	{
+		this.w /= divisor;
+		this.x /= divisor;
+		this.y /= divisor;
+		this.z /= divisor;
+
+		return this;
+	}
+
+	Quaternion.prototype.invert = function()
+	{
+		var magnitude = this.magnitude();
+
+		this.divide(magnitude * magnitude);
+
+		this.x *= -1;
+		this.y *= -1;
+		this.z *= -1;
+
+		return this;
+	}
+
+	Quaternion.prototype.multiply = function(other)
+	{
+		return this.overwriteWithWXYZ
+		(
+			this.w * other.w - this.x * other.x - this.y * other.y - this.z * other.z,
+			this.w * other.x + this.x * other.w + this.y * other.z - this.z * other.y,
+			this.w * other.y - this.x * other.z + this.y * other.w + this.z * other.x,
+			this.w * other.z + this.x * other.y - this.y * other.x + this.z * other.w
+		);
+	}
+
+	Quaternion.prototype.magnitude = function()
+	{
+		return Math.sqrt
+		(
+			this.w * this.w 
+			+ this.x * this.x 
+			+ this.y * this.y 
+			+ this.z * this.z
+		);
+	}
+
+	Quaternion.prototype.normalize = function()
+	{
+		return this.divide(this.magnitude());
+	}
+
+	Quaternion.prototype.overwriteWith = function(other)
+	{
+		this.overwriteWithWXYZ(other.w, other.x, other.y, other.z);
+
+		return this;
+	}
+
+	Quaternion.prototype.overwriteWithWXYZ = function(w,  x,  y,  z)
+	{
+		this.w = w;
+		this.x = x;
+		this.y = y;
+		this.z = z;
+
+		return this;
+	}
+}
+
+function Skeleton(name, boneRoot)
+{
+	this.name = name;
+	this.boneRoot = boneRoot;
+
+	this.bonesAll = [];
+	this.bonesAll = TreeHelper.addNodeAndAllDescendantsToList
+	(
+		this.boneRoot, []
+	);
+	this.bonesAll.addLookups("name");
+}
+{
+	Skeleton.prototype.clone = function(other)
+	{
+		return new Skeleton
+		(
+			this.name,
+			this.boneRoot.clone()
+		);
+	}
+
+	Skeleton.prototype.overwriteWith = function(other)
+	{
+		for (var i = 0; i < this.bonesAll.length; i++)
+		{
+			this.bonesAll[i].overwriteWith(other.bonesAll[i]);
+		}
+	}
+}
+
+function SkeletonHelper()
+{
+	// static class
+}
+{
+	SkeletonHelper.biped = function(heightInPixels)
+	{
+		var heightOver2 = heightInPixels / 2;
+		var heightOver3 = heightInPixels / 3;
+		var heightOver4 = heightInPixels / 4;
+		var heightOver6 = heightInPixels / 6;
+		var heightOver8 = heightInPixels / 8;
+		var heightOver9 = heightInPixels / 9;
+		var heightOver12 = heightInPixels / 12;
+		var heightOver18 = heightInPixels / 18;
+
+		var legRight = new Bone
+		(
+			"Hip.R", 
+			heightOver12, 
+			new Orientation(new Coords(-1, 0, 0), new Coords(0, 0, 1)),
+			[
+				new Bone
+				(
+					"Thigh.R", 
+					heightOver4,
+					new Orientation(new Coords(0, 0, 1), new Coords(-1, 0, 0)),
+					[
+						new Bone
+						(
+							"Shin.R",
+							heightOver4, 
+							new Orientation(new Coords(0, 0, 1), new Coords(1, 0, 0)),
+							[
+								new Bone("Foot.R", heightOver8, new Orientation(new Coords(0, 1, 0), new Coords(1, 0, 0)), [])
+							]
+						),
+					]
+				)
+			]
+		);
+
+		var legLeft = new Bone
+		(
+			"Hip.L", 
+			heightOver12, 
+			new Orientation(new Coords(1, 0, 0), new Coords(0, 0, 1)),
+			[
+				new Bone
+				(
+					"Thigh.L", 
+					heightOver4,
+					new Orientation(new Coords(0, 0, 1), new Coords(-1, 0, 0)),
+					[
+						new Bone
+						(
+							"Shin.L",
+							heightOver4, 
+							new Orientation(new Coords(0, 0, 1), new Coords(1, 0, 0)),
+							[
+								new Bone("Foot.L", heightOver8, new Orientation(new Coords(0, 1, 0), new Coords(1, 0, 0)), [])
+							]
+						),
+					]
+				)
+			]
+		);
+
+		var upperBody = new Bone
+		(
+			"Spine.1",
+			heightOver3, 
+			new Orientation(new Coords(0, .1, -1), new Coords(0, 1, 0)),
+			[
+				new Bone
+				(
+					"Neck",
+					heightOver12, 
+					new Orientation(new Coords(0, 0, -1), new Coords(0, 1, 0)),
+					[
+						new Bone
+						(
+							"Head.Back", 
+							heightOver18, 
+							new Orientation(new Coords(0, 0, -1), new Coords(0, 1, 0)),
+							[
+								new Bone("Head.Front", heightOver9, new Orientation(new Coords(0, 1, 0), new Coords(0, 1, 0)), []),
+							] 
+						)
+					]
+				),
+				new Bone
+				(
+					"Shoulder.L",
+					heightOver6, 
+					new Orientation(new Coords(1, 0, 0), new Coords(0, 0, 1)),
+					[
+						new Bone
+						(
+							"Bicep.L",
+							heightOver6, 
+							new Orientation(new Coords(0, -.1, 1), new Coords(-1, 0, 0)),
+							[
+								new Bone("Forearm.L", heightOver6, new Orientation(new Coords(0, .1, 1), new Coords(-1, 0, 0)), [])
+							]
+						)
+					]
+				),
+				new Bone
+				(
+					"Shoulder.R",
+					heightOver6,
+					new Orientation(new Coords(-1, 0, 0), new Coords(0, 0, 1)),
+					[
+						new Bone
+						(
+							"Bicep.R",
+							heightOver6, 
+							new Orientation(new Coords(0, -.1, 1), new Coords(-1, 0, 0)),
+							[
+								new Bone("Forearm.R", heightOver6, new Orientation(new Coords(0, .1, 1), new Coords(-1, 0, 0)), [])
+							]
+						)
+					]
+				)
+	
+			]
+		); // end spine
+	
+		var skeletonBiped = new Skeleton
+		(
+			"Skeleton0",
+			new Bone
+			(
+				"Root", 
+				heightOver2, 
+				new Orientation(new Coords(0, 0, -1), new Coords(0, 1, 0)),
+				[
+					legRight,
+					legLeft, 
+					upperBody,
+				],
+
+				false // isVisible - hide the root bone
+			)
+		);
+
+		return skeletonBiped;
+	}
+
+	SkeletonHelper.bipedAnimationDefnWalk = function()
+	{
+		var cyclesToRotateBones = .1;
+
+		var animationDefnBipedWalk = new AnimationDefn
+		(
+			"BipedWalk",
+			[
+				new AnimationKeyframe
+				(
+					0, 
+					[
+						new TransformBonePose("Bicep.L", 	[ -.1 ]),
+						new TransformBonePose("Forearm.L", 	[ 0 ]),
+						new TransformBonePose("Thigh.L", 	[ .1 ]),
+						new TransformBonePose("Shin.L", 	[ 0 ]),
+
+						new TransformBonePose("Bicep.R", 	[ .1 ]),
+						new TransformBonePose("Forearm.R", 	[ .1 ]),
+						new TransformBonePose("Thigh.R", 	[ -.05 ]),
+						new TransformBonePose("Shin.R", 	[ 0 ]),
+					]
+				),
+				
+				new AnimationKeyframe
+				(
+					5, 
+					[
+						new TransformBonePose("Thigh.L", 	[ .1 ]),
+						new TransformBonePose("Shin.L", 	[ .1 ]),
+
+						new TransformBonePose("Thigh.R", 	[ -.1 ]),
+						new TransformBonePose("Shin.R", 	[ 0 ]),
+					]
+				),
+	
+				new AnimationKeyframe
+				(
+					10, 
+					[
+						new TransformBonePose("Thigh.L", 	[ 0 ]),
+						new TransformBonePose("Shin.L", 	[ 0 ]),
+	
+						new TransformBonePose("Thigh.R", 	[ 0 ]),
+						new TransformBonePose("Shin.R", 	[ .1 ]),
+					]
+				),
+	
+				new AnimationKeyframe
+				(
+					15, 
+					[
+						new TransformBonePose("Bicep.L", 	[ .1 ]),
+						new TransformBonePose("Forearm.L", 	[ .1 ]),
+						new TransformBonePose("Thigh.L", 	[ -.05 ]),
+	
+						new TransformBonePose("Bicep.R", 	[ -.1 ]),
+						new TransformBonePose("Forearm.R", 	[ 0 ]),
+						new TransformBonePose("Thigh.R", 	[ .1 ]),
+						new TransformBonePose("Shin.R", 	[ 0 ]),
+					]
+				),
+	
+				new AnimationKeyframe
+				(
+					20, 
+					[
+						new TransformBonePose("Thigh.L", 	[ -.1 ]),
+						new TransformBonePose("Shin.L", 	[ 0 ]),
+	
+						new TransformBonePose("Thigh.R", 	[ .1 ]),
+						new TransformBonePose("Shin.R", 	[ .1 ]),
+					]
+				),
+
+				new AnimationKeyframe
+				(
+					25, 
+					[
+						new TransformBonePose("Thigh.L", 	[ 0 ]),
+						new TransformBonePose("Shin.L", 	[ .1 ]),
+	
+						new TransformBonePose("Thigh.R", 	[ 0 ]),
+						new TransformBonePose("Shin.R", 	[ 0 ]),
+					]
+				),
+
+				new AnimationKeyframe
+				(
+					30, 
+					[
+						new TransformBonePose("Bicep.L", 	[ -.1 ]),
+						new TransformBonePose("Forearm.L", 	[ 0 ]),
+						new TransformBonePose("Thigh.L", 	[ .1 ]),
+						new TransformBonePose("Shin.L", 	[ 0 ]),
+
+						new TransformBonePose("Bicep.R", 	[ .1 ]),
+						new TransformBonePose("Forearm.R", 	[ .1 ]),
+						new TransformBonePose("Thigh.R", 	[ -.05 ]),
+						new TransformBonePose("Shin.R", 	[ 0 ]),
+					]
+				),
+			]
+		);
+
+		return animationDefnBipedWalk;
+	}
+
+	SkeletonHelper.transformBuildForMeshAndSkeleton_Proximity = function
+	(
+		meshAtRest, 
+		skeletonAtRest,
+		skeletonPosed
+	)
+	{
+		var vertices = meshAtRest.vertices;
+		var bones = skeletonAtRest.bonesAll;
+
+		var boneNameToInfluenceLookup = [];
+
+		for (var v = 0; v < vertices.length; v++)
+		{
+			var vertexPos = vertices[v];
+
+			var distanceLeastSoFar = Number.POSITIVE_INFINITY;
+			var indexOfBoneClosestSoFar = null;
+			
+			for (var b = 0; b < bones.length; b++)
+			{
+				var bone = bones[b];
+
+				var displacement = vertexPos.clone().subtract
+				(
+					bone.pos().add
+					(
+						bone.orientation.forward.clone().multiplyScalar
+						(
+							bone.length
+						)
+					)
+				);
+
+				var distance = displacement.magnitude();
+				
+				if (distance < distanceLeastSoFar)
+				{
+					distanceLeastSoFar = distance;
+					indexOfBoneClosestSoFar = b;
+				}
+			}
+
+			var boneClosest = bones[indexOfBoneClosestSoFar];
+			var boneClosestName = boneClosest.name;
+
+			var boneInfluence = boneNameToInfluenceLookup[boneClosestName];
+			if (boneInfluence == null)
+			{
+				boneInfluence = new BoneInfluence(boneClosestName, []);
+				boneNameToInfluenceLookup[boneClosestName] = boneInfluence;
+				boneNameToInfluenceLookup.push(boneInfluence);
+			}
+
+			boneInfluence.vertexIndicesControlled.push(v);
+		}
+
+		var returnValue = new TransformMeshPoseWithSkeleton
+		(
+			meshAtRest,
+			skeletonAtRest,
+			skeletonPosed,
+			boneNameToInfluenceLookup
+		);
+
+		return returnValue;
+	}
+}
+
+
+function Transform()
+{}
+{
+	Transform.applyTransformToCoordsMany = function(transform, coordsSet)
+	{
+		for (var i = 0; i < coordsSet.length; i++)
+		{
+			transform.transformCoords(coordsSet[i]);
+		}	
+	}
+}
+
+function TransformBonePose(boneName, cyclesToRotateAroundAxesDownRightForward)
+{
+	this.boneName = boneName;
+	this.cyclesToRotateAroundAxesDownRightForward = cyclesToRotateAroundAxesDownRightForward;
+
+	this.propertyName = this.boneName;
+}
+{
+	// instance methods
+
+	TransformBonePose.prototype.clone = function()
+	{
+		return new TransformBonePose
+		(
+			this.boneName, 
+			this.cyclesToRotateAroundAxesDownRightForward
+		);
+	}
+
+	TransformBonePose.prototype.interpolateWith = function(other, fractionOfProgressTowardOther)
+	{
+		var cyclesToRotateAroundAxesDownRightForwardInterpolated = [];
+
+		for (var i = 0; i < this.cyclesToRotateAroundAxesDownRightForward.length; i++)
+		{
+			var cyclesToRotateInterpolated = 
+				(1 - fractionOfProgressTowardOther) * this.cyclesToRotateAroundAxesDownRightForward[i]
+				+ fractionOfProgressTowardOther * other.cyclesToRotateAroundAxesDownRightForward[i];
+
+			cyclesToRotateAroundAxesDownRightForwardInterpolated[i] = cyclesToRotateInterpolated;
+		}
+
+		var returnValue = new TransformBonePose
+		(
+			this.boneName,
+			cyclesToRotateAroundAxesDownRightForwardInterpolated
+		);	
+
+		return returnValue;
+	}
+
+	TransformBonePose.prototype.transform = function(transformableToTransform)
+	{
+		var skeletonToTransform = transformableToTransform;
+
+		var boneToTransform = skeletonToTransform.bonesAll[this.boneName];
+		var boneOrientation = boneToTransform.orientation;	
+
+		var axesToRotateAround = 
+		[
+			boneOrientation.down,
+			boneOrientation.right,
+			boneOrientation.forward,
+		];
+
+		var quaternionsForRotation = [];
+
+		for (var i = 0; i < this.cyclesToRotateAroundAxesDownRightForward.length; i++)
+		{
+			var axisToRotateAround = axesToRotateAround[i];
+			var cyclesToRotateAroundAxis = this.cyclesToRotateAroundAxesDownRightForward[i];
+
+			if (cyclesToRotateAroundAxis != 0)
+			{
+				var quaternionForRotation = Quaternion.fromAxisAndCyclesToRotate
+				(
+					axisToRotateAround, 
+					cyclesToRotateAroundAxis
+				);
+
+				quaternionsForRotation.push(quaternionForRotation);
+			}
+		}
+
+		this.transform_Bone(quaternionsForRotation, boneToTransform)
+	}
+
+	TransformBonePose.prototype.transform_Bone = function(quaternionsForRotation, boneToTransform)
+	{	
+		var axesToTransform = boneToTransform.orientation.axes;
+
+		for (var i = 0; i < quaternionsForRotation.length; i++)
+		{
+			for (var a = 0; a < axesToTransform.length; a++)
+			{
+				var axisToTransform = axesToTransform[a];
+
+				quaternionsForRotation[i].applyToCoordsAsRotation
+				(
+					axisToTransform		
+				);
+			}
+		}
+
+		for (var i = 0; i < boneToTransform.children.length; i++)
+		{
+			var childBone = boneToTransform.children[i];
+			this.transform_Bone(quaternionsForRotation, childBone);
+		}
+	}
+}
+
+function TransformCamera(camera)
+{
+	this.camera = camera;
+}
+{
+	TransformCamera.prototype.transformCoords = function(coordsToTransform)
+	{
+		this.camera.convertWorldCoordsToViewCoords(coordsToTransform);
+	}
+}
+
+function TransformMeshPoseWithSkeleton
+(
+	meshAtRest,
+	skeletonAtRest,
+	skeletonPosed,
+	boneInfluences
+)
+{
+	this.meshAtRest = meshAtRest;
+	this.skeletonAtRest = skeletonAtRest;
+	this.skeletonPosed = skeletonPosed;
+	this.boneInfluences = boneInfluences;
+	this.boneInfluences.addLookups("boneName");
+}
+{
+	TransformMeshPoseWithSkeleton.prototype.transformMesh = function(meshToPose)
+	{
+		for (var i = 0; i < this.boneInfluences.length; i++)
+		{
+			var boneInfluence = this.boneInfluences[i];
+			var boneName = boneInfluence.boneName;
+			var boneAtRest = this.skeletonAtRest.bonesAll[boneName];
+			var bonePosed = this.skeletonPosed.bonesAll[boneName];
+
+			var boneAtRestOrientation = boneAtRest.orientation;
+			var bonePosedOrientation = bonePosed.orientation;
+
+			var vertexIndicesControlled = boneInfluence.vertexIndicesControlled;
+			for (var vi = 0; vi < vertexIndicesControlled.length; vi++)
+			{
+				var vertexIndex = vertexIndicesControlled[vi];
+
+				var vertexAtRest = this.meshAtRest.vertices[vertexIndex];
+				var vertexToPose = meshToPose.vertices[vertexIndex];
+
+				var vertexAtRestProjected = vertexAtRest.clone().subtract
+				(
+					boneAtRest.pos()
+				);
+
+				vertexAtRestProjected.overwriteWithXYZ
+				(
+					vertexAtRestProjected.dotProduct(boneAtRestOrientation.right),
+					vertexAtRestProjected.dotProduct(boneAtRestOrientation.down),
+					vertexAtRestProjected.dotProduct(boneAtRestOrientation.forward)
+				);
+
+				vertexToPose.overwriteWith
+				(
+					bonePosed.pos()
+				).add
+				(
+					bonePosedOrientation.right.clone().multiplyScalar
+					(
+						vertexAtRestProjected.x
+					)
+				).add
+				(
+					bonePosedOrientation.down.clone().multiplyScalar
+					(
+						vertexAtRestProjected.y
+					)
+				).add
+				(
+					bonePosedOrientation.forward.clone().multiplyScalar
+					(
+						vertexAtRestProjected.z
+					)
+				);
+			}
+
+		} // end for each boneInfluence
+	}
+}
+
+function TransformOrient(orientation)
+{
+	this.orientation = orientation;
+}
+{
+	TransformOrient.prototype.transformCoords = function(coordsToTransform)
+	{
+		return coordsToTransform.overwriteWithXYZ
+		(
+			coordsToTransform.dotProduct(this.orientation.forward),
+			coordsToTransform.dotProduct(this.orientation.down),
+			coordsToTransform.dotProduct(this.orientation.right)
+		);
+	}
+}
+
+function TransformScale(scaleFactors)
+{
+	this.scaleFactors = scaleFactors;
+}
+{
+	TransformScale.prototype.transformCoords = function(coordsToTransform)
+	{
+		coordsToTransform.multiply(this.scaleFactors);	
+	}
+}
+
+function TransformTranslate(displacement)
+{
+	this.displacement = displacement;
+}
+{
+	TransformTranslate.prototype.transformCoords = function(coordsToTransform)
+	{
+		return coordsToTransform.add(this.displacement);
+	}
+}
+
+function TreeHelper()
+{}
+{
+	TreeHelper.addNodeAndAllDescendantsToList = function(node, listToAddTo)
+	{
+		listToAddTo.push(node);
+
+		for (var i = 0; i < node.children.length; i++)
+		{
+			var nodeChild = node.children[i];
+			TreeHelper.addNodeAndAllDescendantsToList
+			(
+				nodeChild, 
+				listToAddTo
+			);
+		}
+
+		return listToAddTo;
+	}
+}
+
+function VertexGroup(name, vertexIndices)
+{
+	this.name = name;
+	this.vertexIndices = vertexIndices;
+}
+{
+	// cloneable
+
+	VertexGroup.prototype.clone = function()
+	{
+		return new VertexGroup(this.name, this.vertexIndices.slice());
+	}
+}
+
+function World
+(
+	skeletonAtRest, 
+	meshControlledBySkeletonAtRest,
+	animationDefn, 
+	camera, 
+	secondsPerRunCycle
+)
+{
+	this.skeletonAtRest = skeletonAtRest;
+	this.skeletonPosed = this.skeletonAtRest.clone();
+
+	this.meshControlledBySkeletonAtRest = meshControlledBySkeletonAtRest;
+	this.meshControlledBySkeletonPosed = this.meshControlledBySkeletonAtRest.clone();
+
+	this.transformMeshPoseWithSkeleton = new TransformMeshPoseWithSkeleton
+	(
+		this.meshControlledBySkeletonAtRest,
+		this.skeletonAtRest,
+		this.skeletonPosed,
+		BoneInfluence.buildManyForBonesAndVertexGroups
+		(
+			this.skeletonAtRest.bonesAll,
+			this.meshControlledBySkeletonAtRest.vertexGroups
+		)
+	);
+
+	this.animationDefn = animationDefn;
+	this.camera = camera;
+	this.secondsPerRunCycle = secondsPerRunCycle;
+
+	this.animationRun = new AnimationRun
+	(
+		this.animationDefn,
+		this.skeletonPosed
+	);
+}
+{
+	World.prototype.updateForTimerTick = function()
+	{
+		this.skeletonPosed.overwriteWith(this.skeletonAtRest);
+
+		this.animationRun.updateForTimerTick();
+
+		this.meshControlledBySkeletonPosed.overwriteWith
+		(
+			this.meshControlledBySkeletonAtRest
+		);
+
+		this.transformMeshPoseWithSkeleton.transformMesh(this.meshControlledBySkeletonPosed);
+
+		Globals.Instance.displayHelper.drawWorld(this);
+	}
+}
+
+// run
+
+main();
+
+</script>
+</body>
+</html>
